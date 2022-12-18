@@ -1,0 +1,67 @@
+* mimir
+
+** Overview
+mimir is an attempt to produce a one-stop-shop for my experimental data ingestion. The goal of mimir is to allow for the following workflow:
+
+1. Plug in USB
+2. mimir -  with his infinite knowledge - will determine which data have not been added to his knowledge bank
+3. mimir will convert these data into a tidy format, then upload them to the knowledge base. mimir will ask any clarifying questions necessary to document the experimental details that produced these data
+
+To allow for this workflow, several things need to be developed
+
+*** The database
+
+**** Short version
+An *experiment* is a *set of conditions* exposed to some *cells* that happens on a given date. A *condition* is just *how the cells were plated* as well as *what the cells were exposed to*.
+
+**** Long version
+The database being used for this project is Postgres.
+
+The database is comprised of many relations (though I frequently call them tables). When I refer to the concept defined by a relation, it will be *bold*. When I refer to the standard wet-lab definition, it will be in normal text.
+
+- *cell*. A cell refers to a cell line, such as HeLa, TCCSup, BBN975, etc.
+  - cell_name. Refers to a unique identifier the cell is called. This can be a colloquial name, but aliases are not allowed. A cell may only have one 'common name'.
+    - This may change in the future only if necessary
+  - parent_name. Refers to the upstream cell line used to produce this one. For instance, a CRISPR KO would refer to it's non-knocked out progenitor as its parent.
+    - If, for some reason, that CRISPR KO had another genetic modification added to IT, it would probably be best to refer to the 'parent' as actually its 'grandparent'.
+    - This may be better named as 'base_name' rather than 'parent'
+    - While it might make sense to have both a 'base_name' and 'parent_name' column, in my usecase this appears to be an edge case I have not encountered. It probably would not be too difficult to add if need be.
+  - modifier. This is mostly a 'notes' column, and describes how the cell was generated in free-form text.
+
+- *start_condition*. A start condition refers to the (assumed) immutable properties a *cell* is committed to when an experiment is begun. You could think of this as a background condition that underlies the entirety of the experiment.
+  - seeding_density. Represents the number of cells per mL.
+  - growth_time. The amount of time the cells were allowed to grow. Essentially the length of the experiment.
+  - plate_form_factor. The kind of plate the cells were put in, such as 6-well, 100mm, t75, etc.
+  - cell. A *cell*. See above.
+
+- *agent*. *agents* are things that happen to *start_conditions*. It might be a drug, like erdafitinib, but it could be something more obscure, like low O2, or perhaps plate shaking, decreased temperature, etc.
+  - agent_name. The common name of the agent.
+    - There cannot be aliases, at least at the database level.
+  - concentration. The amount of the substance, without units.
+  - concentration_units. The units used to measure the substance.
+  - agent_duration. The length of time the agent will be used.
+  - agent_start_since_plate. Since the cells were plated, when did this condition start?
+
+- *cond*. A *cond* is short for condition, and is an *agent* plus a *start_condition*. If there are multiple *agents* for a single well of cells, say they have been exposed to two drugs (that is, two *agents*), then the *cond* will be part of a *condition_set* that has multiple members. All *conds* are part of *conditions_sets*, but not all of them have multiple members.
+  - agent_id. The primary key of an *agent*.
+  - start_condition_id. The primary key of a *start_condition*
+  - condition_set_id. The primary key of a *condition_set*
+
+- *condition_set*. A *condition_set* is both a little and a lot at the same time. As a relation, it only has its primary key as a column. However, it represents 'slots' that one or more *conds* can point to, and therefore conceptually it represents the 'game plan' of an experiment that has yet to be performed.
+
+- *exp* is short for experiment. It is the realization of a *condition_set* at a given time. While a traditional experiment is thought of in a much broader sense (like a dose response is an experiment), here an experiment represents only a single tube, or a single well. This has a unique benefit in that it forces us to confront what data should be considered comparable. The simple intent to use samples for the same experiment and putting them on the same or different plates should not make them more or less comparable than two samples plated for different experiments, so long as their condition specifications are taken into account.
+
+*** The R package
+
+The R package serves as an interface for the database.
+
+The package has several verbs that usually work in sequence:
+- make, which contains rudimentary constructors of database entries
+- validate, which contains validators and parsers to convert entries to a correct, unified format or check if they are in the right entry format
+- find, which determines if a given entry exists within a given table, or which entries satisfy query criteria
+- add, which adds an entry to a given relation
+
+By default, arguments passed to any given function in the list above is also passed to all of the functions above that one. For instance, if arguments were passed to an add function, the arguments will first be passed to a make function, and the output will then be passed to a validate function, then a find function, then finally the add function finishes with its specific role's function.
+
+*** The CLI interface
+TBD
